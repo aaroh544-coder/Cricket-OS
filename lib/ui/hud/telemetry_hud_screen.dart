@@ -1,12 +1,31 @@
 import 'package:flutter/material.dart';
 import 'dart:math';
+import '../../core/video/smart_trigger_controller.dart';
 
 /// Phase 3 & 4: Full Match Officiating UI Layout (Telemetry HUD)
-class TelemetryHudScreen extends StatelessWidget {
+class TelemetryHudScreen extends StatefulWidget {
+  @override
+  _TelemetryHudScreenState createState() => _TelemetryHudScreenState();
+}
+
+class _TelemetryHudScreenState extends State<TelemetryHudScreen> {
+  final SmartTriggerController _triggerController = SmartTriggerController();
   final double currentRunRate = 6.4;
   final double requiredRunRate = 8.2;
   final String ballSpeed = "122";
   final String ballType = "In-swinger";
+
+  @override
+  void initState() {
+    super.initState();
+    _triggerController.initialize();
+  }
+
+  @override
+  void dispose() {
+    _triggerController.dispose();
+    super.dispose();
+  }
   
   @override
   Widget build(BuildContext context) {
@@ -40,8 +59,8 @@ class TelemetryHudScreen extends StatelessWidget {
                 // Top HUD: Run Rates & Trend
                 _buildTopHud(),
                 
-                // Edge-AI Umpire Hidden Vibration Alert Trigger
-                // (Logic handled in ViewModel, UI doesn't need to show it unless debugging)
+                // Buffer & Thermal Status (Diagnostic Overlay)
+                _buildDiagnosticOverlay(),
 
                 // Bottom HUD: SpeedRadar, AI Voice & Ball Classification
                 _buildBottomHud(),
@@ -101,6 +120,49 @@ class TelemetryHudScreen extends StatelessWidget {
     );
   }
 
+  Widget _buildDiagnosticOverlay() {
+    return StreamBuilder<int>(
+      stream: _triggerController.thermalManager.frameRateStream,
+      initialData: 60,
+      builder: (context, snapshot) {
+        final fps = snapshot.data ?? 60;
+        final temp = _triggerController.thermalManager.currentTemperature;
+        
+        return Container(
+          padding: const EdgeInsets.all(12),
+          margin: const EdgeInsets.symmetric(horizontal: 24),
+          decoration: BoxDecoration(
+            color: Colors.black54,
+            border: Border.all(color: Colors.white10),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _buildDiagStat("TEMP", "${temp.toStringAsFixed(1)}°C", 
+                  temp > 40 ? Colors.orangeAccent : Colors.greenAccent),
+              const SizedBox(width: 20),
+              _buildDiagStat("CAP_FPS", "$fps", 
+                  fps < 60 ? Colors.orangeAccent : Colors.cyanAccent),
+              const SizedBox(width: 20),
+              _buildDiagStat("BUFFER", "3.0s", Colors.white70),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildDiagStat(String label, String value, Color color) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: const TextStyle(color: Colors.white38, fontSize: 8, fontWeight: FontWeight.bold)),
+        Text(value, style: TextStyle(color: color, fontSize: 14, fontWeight: FontWeight.bold, fontFamily: 'monospace')),
+      ],
+    );
+  }
+
   Widget _buildBottomHud() {
     return Padding(
       padding: const EdgeInsets.all(24.0),
@@ -130,27 +192,41 @@ class TelemetryHudScreen extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              // SpeedRadar Pro
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.baseline,
-                textBaseline: TextBaseline.alphabetic,
+              // SpeedRadar Pro & Biomechanics
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    ballSpeed,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 64,
-                      fontWeight: FontWeight.w900,
-                    ),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.baseline,
+                    textBaseline: TextBaseline.alphabetic,
+                    children: [
+                      Text(
+                        ballSpeed,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 64,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      const Text(
+                        "KM/H",
+                        style: TextStyle(
+                          color: Colors.white54,
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 4),
-                  const Text(
-                    "KM/H",
-                    style: TextStyle(
-                      color: Colors.white54,
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                    ),
+                  const SizedBox(height: 12),
+                  // Biomechanics Mini-Panel
+                  Row(
+                    children: [
+                      _buildMiniMetric("ARM", "172°", Colors.cyanAccent),
+                      const SizedBox(width: 16),
+                      _buildMiniMetric("HEIGHT", "2.1m", Colors.white70),
+                    ],
                   ),
                 ],
               ),
@@ -158,7 +234,10 @@ class TelemetryHudScreen extends StatelessWidget {
               // Voice Command Indicator
               Column(
                 children: [
-                  const Icon(Icons.mic, color: Colors.cyanAccent, size: 32),
+                  GestureDetector(
+                    onTap: () => _triggerController.commitEvent("MANUAL_TRIGGER"),
+                    child: const Icon(Icons.mic, color: Colors.cyanAccent, size: 32),
+                  ),
                   const SizedBox(height: 4),
                   Text(
                     "LISTENING",
@@ -175,6 +254,16 @@ class TelemetryHudScreen extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildMiniMetric(String label, String value, Color color) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: const TextStyle(color: Colors.white24, fontSize: 8, fontWeight: FontWeight.bold)),
+        Text(value, style: TextStyle(color: color, fontSize: 16, fontWeight: FontWeight.bold, fontFamily: 'monospace')),
+      ],
     );
   }
 }
